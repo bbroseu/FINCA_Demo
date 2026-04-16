@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FINCA Demo</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        .screen { display: none; }
+        .screen.active { display: block; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; }
+        input, button { padding: 10px; margin: 5px 0; }
+        button { background: #007bff; color: white; border: none; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        .error { color: red; }
+        .success { color: green; }
+        .loading { color: #666; }
+    </style>
+</head>
+<body>
+    <h1>FINCA Kosovo Mobile Banking Demo</h1>
+
+    <!-- Screen 1: Personal Number Entry -->
+    <div id="screen1" class="screen active">
+        <h2>Enter Personal Number</h2>
+        <div class="form-group">
+            <label for="personalNumber">Personal Number:</label>
+            <input type="text" id="personalNumber" placeholder="e.g., 12345678">
+        </div>
+        <button onclick="checkContact()">Continue</button>
+        <div id="check-status"></div>
+    </div>
+
+    <!-- Screen 2a: Existing User Document Upload -->
+    <div id="screen2a" class="screen">
+        <h2>Welcome Back!</h2>
+        <div id="contact-info"></div>
+        <form id="upload-form" enctype="multipart/form-data">
+            <div class="form-group">
+                <label for="selfie">Selfie:</label>
+                <input type="file" name="selfie" accept="image/*" required>
+            </div>
+            <div class="form-group">
+                <label for="idDocument">ID Document:</label>
+                <input type="file" name="idDocument" accept="image/*,application/pdf" required>
+            </div>
+            <input type="hidden" id="contactCode" name="contactCode">
+            <button type="submit">Upload Documents</button>
+        </form>
+        <div id="upload-status"></div>
+    </div>
+
+    <!-- Screen 2b: New User Registration -->
+    <div id="screen2b" class="screen">
+        <h2>New User Registration</h2>
+        <form id="register-form" enctype="multipart/form-data">
+            <div class="form-group">
+                <label for="firstName">First Name:</label>
+                <input type="text" name="firstName" required>
+            </div>
+            <div class="form-group">
+                <label for="lastName">Last Name:</label>
+                <input type="text" name="lastName" required>
+            </div>
+            <div class="form-group">
+                <label for="regPersonalNumber">Personal Number:</label>
+                <input type="text" name="personalNumber" id="regPersonalNumber" readonly>
+            </div>
+            <div class="form-group">
+                <label for="birthDate">Birth Date (dd.mm.yyyy):</label>
+                <input type="text" name="birthDate" placeholder="14.03.1990" required>
+            </div>
+            <div class="form-group">
+                <label for="address">Address:</label>
+                <input type="text" name="address" required>
+            </div>
+            <div class="form-group">
+                <label for="mobile">Mobile:</label>
+                <input type="text" name="mobile" required>
+            </div>
+            <div class="form-group">
+                <label for="regSelfie">Selfie:</label>
+                <input type="file" name="selfie" accept="image/*" required>
+            </div>
+            <div class="form-group">
+                <label for="regIdDocument">ID Document:</label>
+                <input type="file" name="idDocument" accept="image/*,application/pdf" required>
+            </div>
+            <div class="form-group">
+                <label for="utilityBill">Utility Bill:</label>
+                <input type="file" name="utilityBill" accept="image/*,application/pdf" required>
+            </div>
+            <button type="submit">Register</button>
+        </form>
+        <div id="register-status"></div>
+    </div>
+
+    <!-- Screen 3: Success -->
+    <div id="screen3" class="screen">
+        <h2>Success!</h2>
+        <div id="success-message"></div>
+        <button onclick="location.reload()">Start Over</button>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
