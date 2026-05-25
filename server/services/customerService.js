@@ -143,4 +143,91 @@ async function setActive(contactId, isActive) {
   return rows[0] ?? null;
 }
 
-module.exports = { listCustomers, getCustomerById, setActive };
+// Convert "dd.mm.yyyy" -> ISO "yyyy-mm-dd". Pass-through if already ISO.
+function toIsoBirthDate(value) {
+  if (!value) return null;
+  const dmy = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(value);
+  if (dmy) return `${dmy[3]}-${dmy[2]}-${dmy[1]}`;
+  return value;
+}
+
+// Builds a short, unique placeholder that fits VARCHAR(20). Only used until
+// the real contact_id is known and a derived "C-XXXXXXXX" code is written.
+function buildTempContactCode() {
+  return `T-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`.slice(0, 20);
+}
+
+async function createOrUpdateCustomer({
+  contactCode,
+  personalNumber,
+  firstName,
+  lastName,
+  birthDate,
+  mobile,
+  address,
+  email,
+}) {
+  if (!personalNumber) throw httpError(400, 'personalNumber is required');
+
+  const isoBirthDate = toIsoBirthDate(birthDate);
+  const tempCode = contactCode || buildTempContactCode();
+
+  const { rows } = await db.query(
+    `INSERT INTO users (
+       contact_code, personal_number, first_name, last_name, birth_date,
+       mobile, address, email, registration_date
+     )
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())
+     ON CONFLICT (personal_number) DO UPDATE
+       SET first_name   = EXCLUDED.first_name,
+           last_name    = EXCLUDED.last_name,
+           birth_date   = COALESCE(EXCLUDED.birth_date, users.birth_date),
+           mobile       = EXCLUDED.mobile,
+           address      = COALESCE(EXCLUDED.address, users.address),
+           email        = COALESCE(EXCLUDED.email,   users.email),
+           contact_code = CASE
+                            WHEN $9::text IS NOT NULL THEN $9
+                            ELSE users.contact_code
+                          END,
+           last_updated = now()
+     RETURNING contact_id, contact_code, (xmax = 0) AS inserted`,
+    [tempCode, personalNumber, firstName, lastName, isoBirthDate,
+     mobile, address ?? null, email ?? null, contactCode ?? null]
+  );
+
+  const { contact_id: id, contact_code: code, inserted } = rows[0];
+
+  // Replace our placeholder with the derived "C-00000123" form once we have the id.
+  if (inserted && !contactCode) {
+    const derived = `C-${String(id).padStart(8, '0')}`;
+    await db.query(
+      `UPDATE users SET contact_code = $1 WHERE contact_id = $2`,
+      [derived, id]
+    );
+    return { contact_id: id, contact_code: derived, inserted: true };
+  }
+
+  return { contact_id: id, contact_code: code, inserted };
+}
+
+async function attachUserImages(contactId, images = []) {
+  for (const img of images) {
+    if (!img || !img.type || !img.path) continue;
+    await db.query(
+      `INSERT INTO user_images (contact_id, image_type, image_path)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (contact_id, image_type) DO UPDATE
+         SET image_path  = EXCLUDED.image_path,
+             uploaded_at = now()`,
+      [contactId, img.type, img.path]
+    );
+  }
+}
+
+module.exports = {
+  listCustomers,
+  getCustomerById,
+  setActive,
+  createOrUpdateCustomer,
+  attachUserImages,
+};

@@ -4,8 +4,21 @@ const { v4: uuid } = require('uuid');
 const aspektClient = require('../middleware/aspektClient');
 const upload = require('../middleware/upload');
 const requireJwt = require('../middleware/requireJwt');
+const customerService = require('../services/customerService');
 const fs = require('fs');
 const path = require('path');
+
+// Returns [{ type, path }, ...] from multer's req.files for persisting to user_images.
+function collectUploadedImages(reqFiles) {
+  if (!reqFiles) return [];
+  const out = [];
+  for (const [fieldName, files] of Object.entries(reqFiles)) {
+    for (const f of files) {
+      if (f?.path) out.push({ type: fieldName, path: f.path });
+    }
+  }
+  return out;
+}
 
 const router = express.Router();
 
@@ -166,6 +179,7 @@ router.post('/register', upload.fields([
   } = req.body || {};
 
   const uploadedFiles = [];
+  let keepUploadedFiles = false;
 
   try {
     // Parse scanURLs and additionalInfo if they are JSON strings
@@ -273,10 +287,27 @@ router.post('/register', upload.fields([
       data: { Alias: personalNumber }
     });
 
-    // If user exists, return their stored information
+    // If user exists, mirror them into the local DB and return their stored info.
     if (checkResponse.status === 200) {
       if (checkResponse.data?.Body && Array.isArray(checkResponse.data.Body) && checkResponse.data.Body.length > 0) {
         const contact = checkResponse.data.Body[0];
+
+        const saved = await customerService.createOrUpdateCustomer({
+          contactCode: contact.ContactCode,
+          personalNumber: contact.PersonalNumber,
+          firstName: contact.FirstName,
+          lastName: contact.LastName,
+          birthDate: contact.BirthDate,
+          mobile: contact.Mobile,
+          address: contact.Address,
+        });
+
+        const images = collectUploadedImages(req.files);
+        if (images.length > 0) {
+          await customerService.attachUserImages(saved.contact_id, images);
+          keepUploadedFiles = true;
+        }
+
         return res.json({
           userExists: true,
           contact: {
@@ -315,9 +346,28 @@ router.post('/register', upload.fields([
 
     // Handle Aspekt response codes
     if (response.status === 200) {
+      // CBS accepted the subscription (still pending approval over there).
+      // Persist the registration locally so we have a record before approval.
+      const saved = await customerService.createOrUpdateCustomer({
+        personalNumber,
+        firstName,
+        lastName,
+        birthDate: normalizedBirthDate,
+        mobile,
+        address,
+      });
+
+      const images = collectUploadedImages(req.files);
+      if (images.length > 0) {
+        await customerService.attachUserImages(saved.contact_id, images);
+        keepUploadedFiles = true;
+      }
+
       return res.json({
         success: true,
         subscriptionId,
+        contactId: saved.contact_id,
+        contactCode: saved.contact_code,
         status: "pending"
       });
     } else if (response.data?.Code === 441) {
@@ -340,22 +390,25 @@ router.post('/register', upload.fields([
     console.error('Contact registration error:', error.message);
     return res.status(500).json({ error: 'Registration failed' });
   } finally {
-    // Clean up temporary files
-    if (req.files) {
-      Object.values(req.files).flat().forEach(file => {
-        uploadedFiles.push(file.path);
+    // Clean up temporary files — but keep them when they've been linked into
+    // user_images, otherwise the DB row would point at a missing path.
+    if (!keepUploadedFiles) {
+      if (req.files) {
+        Object.values(req.files).flat().forEach(file => {
+          uploadedFiles.push(file.path);
+        });
+      }
+
+      uploadedFiles.forEach(filePath => {
+        try {
+          if (fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath);
+          }
+        } catch (cleanupError) {
+          console.error('Error cleaning up file:', filePath, cleanupError.message);
+        }
       });
     }
-
-    uploadedFiles.forEach(filePath => {
-      try {
-        if (fs.existsSync(filePath)) {
-          fs.unlinkSync(filePath);
-        }
-      } catch (cleanupError) {
-        console.error('Error cleaning up file:', filePath, cleanupError.message);
-      }
-    });
   }
 });
 
