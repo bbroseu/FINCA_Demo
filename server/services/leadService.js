@@ -1,8 +1,5 @@
 const { v4: uuidv4 } = require('uuid');
 const aspektClient = require('../middleware/aspektClient');
-const leadMocks = require('../mocks/lead.mock');
-
-const useMockAPI = process.env.USE_MOCK_API === 'true';
 
 class LeadService {
 
@@ -13,15 +10,9 @@ class LeadService {
   async getMobileAppLeadSourceCode() {
     try {
       const requestId = uuidv4();
-      let response;
-
-      if (useMockAPI) {
-        response = leadMocks.getAllLeadSources();
-      } else {
-        response = await aspektClient.get(`/api/getAllLeadSources/${requestId}`, {
-          data: {}
-        });
-      }
+      const response = await aspektClient.get(`/api/getAllLeadSources/${requestId}`, {
+        data: {}
+      });
 
       if (response.status === 200 && response.data.Body) {
         const leadSources = response.data.Body;

@@ -1,8 +1,12 @@
 const express = require('express');
 const paymentService = require('../services/paymentService');
+const requireJwt = require('../middleware/requireJwt');
 const router = express.Router();
 
-router.get('/start', (req, res) => {
+// /response and /callback are inbound from the payment gateway (browser
+// redirect + S2S notification). They authenticate via HASH-v3 signature
+// verification inside paymentService and cannot carry a JWT.
+router.get('/start', requireJwt, (req, res) => {
   const { amount, orderId } = req.query;
 
   try {

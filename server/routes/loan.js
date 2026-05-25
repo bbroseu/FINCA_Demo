@@ -2,11 +2,12 @@ const express = require('express');
 const { v4: uuid } = require('uuid');
 const aspektClient = require('../middleware/aspektClient');
 const loanService = require('../services/loanService');
+const requireJwt = require('../middleware/requireJwt');
 const router = express.Router();
 
 // GET /api/loan/details/:alias/:loanNumber
 // Main endpoint to get consolidated loan details for an authenticated user
-router.get('/details/:alias/:loanNumber', async (req, res) => {
+router.get('/details/:alias/:loanNumber', requireJwt, async (req, res) => {
   try {
     const { alias, loanNumber } = req.params;
 
@@ -43,7 +44,7 @@ router.get('/details/:alias/:loanNumber', async (req, res) => {
 });
 
 // Get active loans for ownership validation (can be used independently)
-router.get('/active/:alias', async (req, res) => {
+router.get('/active/:alias', requireJwt, async (req, res) => {
   try {
     const { alias } = req.params;
 
@@ -101,7 +102,7 @@ router.get('/active/:alias', async (req, res) => {
 
 // GET /api/loan/info/:alias/:loanNumber
 // Get basic loan information (without repayment plan)
-router.get('/info/:alias/:loanNumber', async (req, res) => {
+router.get('/info/:alias/:loanNumber', requireJwt, async (req, res) => {
   try {
     const { alias, loanNumber } = req.params;
 
@@ -186,7 +187,7 @@ router.get('/info/:alias/:loanNumber', async (req, res) => {
 
 // GET /api/loan/repayment/:alias/:loanNumber
 // Get repayment plan for a loan
-router.get('/repayment/:alias/:loanNumber', async (req, res) => {
+router.get('/repayment/:alias/:loanNumber', requireJwt, async (req, res) => {
   try {
     const { alias, loanNumber } = req.params;
 
@@ -268,7 +269,7 @@ router.get('/repayment/:alias/:loanNumber', async (req, res) => {
 });
 
 // Test endpoint - Check loan status
-router.post('/test-loan-status', async (_req, res) => {
+router.post('/test-loan-status', requireJwt, async (_req, res) => {
   try {
     const testData = {
       "Alias": "1403990450033",
@@ -283,27 +284,10 @@ router.post('/test-loan-status', async (_req, res) => {
     console.log('========================');
 
     let response;
-    if (process.env.USE_MOCK_API === 'true') {
-      // Mock response for loan status
-      response = {
-        status: 200,
-        data: {
-          Id: 26902,
-          Code: 200,
-          Msg: "OK",
-          Body: {
-            LoanNumber: testData.LoanNumber,
-            Status: "Repayment",
-            StatusCode: 200
-          }
-        }
-      };
-    } else {
-      const aspektClient = require('../middleware/aspektClient');
-      response = await aspektClient.get(`/api/checkLoanStatus/${requestId}`, {
-        data: testData
-      });
-    }
+    const aspektClient = require('../middleware/aspektClient');
+    response = await aspektClient.get(`/api/checkLoanStatus/${requestId}`, {
+      data: testData
+    });
 
     return res.json({
       success: true,
@@ -328,7 +312,7 @@ router.post('/test-loan-status', async (_req, res) => {
 });
 
 // Test endpoint - Get active loans
-router.post('/test-active-loans', async (_req, res) => {
+router.post('/test-active-loans', requireJwt, async (_req, res) => {
   try {
     const testData = {
       "Alias": "1403990450033",
@@ -355,44 +339,10 @@ router.post('/test-active-loans', async (_req, res) => {
     console.log('========================');
 
     let response;
-    if (process.env.USE_MOCK_API === 'true') {
-      // Mock response for active loans
-      response = {
-        status: 200,
-        data: {
-          Id: 37199,
-          Code: 200,
-          Msg: "OK",
-          Body: {
-            ActiveLoans: {
-              Loans: [
-                {
-                  Alias: testData.Alias,
-                  LoanNumber: "01150000001-01-0337421-00001",
-                  Amount: 1500000.0,
-                  Product: "04-03 MF AGRICULTURE",
-                  ProductType: "Standard",
-                  FirstInstallmentDate: "31.07.2020",
-                  MaturityDate: "30.09.2020",
-                  NumberOfInstallments: 3,
-                  RemainingInstallments: 3,
-                  NextInstallmentAmount: 520937.0,
-                  NextInstallmentDate: "31.07.2020",
-                  TotalToCloseAmount: 1500000.0,
-                  TotalPastDueAmount: 0.0,
-                  DaysInArrears: 0
-                }
-              ]
-            }
-          }
-        }
-      };
-    } else {
-      const aspektClient = require('../middleware/aspektClient');
-      response = await aspektClient.get(`/api/getActiveLoans/${requestId}`, {
-        data: testData
-      });
-    }
+    const aspektClient = require('../middleware/aspektClient');
+    response = await aspektClient.get(`/api/getActiveLoans/${requestId}`, {
+      data: testData
+    });
 
     return res.json({
       success: true,
@@ -417,7 +367,7 @@ router.post('/test-active-loans', async (_req, res) => {
 });
 
 // Test endpoint - Get loan details
-router.post('/test-loan-details', async (_req, res) => {
+router.post('/test-loan-details', requireJwt, async (_req, res) => {
   try {
     const testData = {
       "LoanNumber": "01150000013-01-0088251-00002",
@@ -432,49 +382,10 @@ router.post('/test-loan-details', async (_req, res) => {
     console.log('=========================');
 
     let response;
-    if (process.env.USE_MOCK_API === 'true') {
-      // Mock response for loan details
-      response = {
-        status: 200,
-        data: {
-          Id: 37379,
-          Code: 200,
-          Msg: "OK",
-          Body: {
-            Loans: [
-              {
-                Alias: testData.Alias,
-                LoanNumber: testData.LoanNumber,
-                LoanStatus: "Repayment",
-                LoanStatusCode: 4,
-                Amount: 1027000.0,
-                Fees: 22500.0,
-                Product: "04-02 MF SERVICES ET PRODUCTION",
-                ProductType: "Standard",
-                FirstInstallmentDate: "27.04.2020",
-                MaturityDate: "25.03.2021",
-                NumberOfInstallments: 12,
-                RemainingInstallments: 12,
-                NextInstallmentAmount: 101442.0,
-                NextInstallmentDate: "27.07.2020",
-                TotalToCloseAmount: 1032449.54,
-                TotalPastDueAmount: 206762.29,
-                RemainingAmount: 955382.08,
-                RemainingFees: 0.0,
-                Penalty: 174.89,
-                DaysInArrears: 55,
-                DaysInArrearsOD: 55
-              }
-            ]
-          }
-        }
-      };
-    } else {
-      const aspektClient = require('../middleware/aspektClient');
-      response = await aspektClient.get(`/api/getLoan/${requestId}`, {
-        data: testData
-      });
-    }
+    const aspektClient = require('../middleware/aspektClient');
+    response = await aspektClient.get(`/api/getLoan/${requestId}`, {
+      data: testData
+    });
 
     return res.json({
       success: true,
@@ -499,7 +410,7 @@ router.post('/test-loan-details', async (_req, res) => {
 });
 
 // Test endpoint - Get repayment plan
-router.post('/test-repayment-plan', async (_req, res) => {
+router.post('/test-repayment-plan', requireJwt, async (_req, res) => {
   try {
     const testData = {
       "Alias": "1403990450033",
@@ -514,62 +425,10 @@ router.post('/test-repayment-plan', async (_req, res) => {
     console.log('===========================');
 
     let response;
-    if (process.env.USE_MOCK_API === 'true') {
-      // Mock response for repayment plan
-      response = {
-        status: 200,
-        data: {
-          Id: 0,
-          Code: 200,
-          Msg: "OK",
-          Body: [
-            {
-              Alias: testData.Alias,
-              LoanNumber: testData.LoanNumber,
-              Amount: 5000,
-              Product: "PR001",
-              RepaymentPlan: [
-                {
-                  Installment: "1",
-                  DateFrom: "08/08/2018",
-                  DateTo: "08/09/2018",
-                  LastRepaymentDate: "08/09/2018",
-                  InstallmentAmount: "3223",
-                  Principal: "3000",
-                  Interest: "223",
-                  Balance: "6446"
-                },
-                {
-                  Installment: "2",
-                  DateFrom: "08/09/2018",
-                  DateTo: "08/10/2018",
-                  LastRepaymentDate: "08/10/2018",
-                  InstallmentAmount: "3223",
-                  Principal: "3000",
-                  Interest: "223",
-                  Balance: "3223"
-                },
-                {
-                  Installment: "3",
-                  DateFrom: "08/10/2018",
-                  DateTo: "08/11/2018",
-                  LastRepaymentDate: "08/11/2018",
-                  InstallmentAmount: "3223",
-                  Principal: "3000",
-                  Interest: "223",
-                  Balance: "0"
-                }
-              ]
-            }
-          ]
-        }
-      };
-    } else {
-      const aspektClient = require('../middleware/aspektClient');
-      response = await aspektClient.get(`/api/repaymentPlan/${requestId}`, {
-        data: testData
-      });
-    }
+    const aspektClient = require('../middleware/aspektClient');
+    response = await aspektClient.get(`/api/repaymentPlan/${requestId}`, {
+      data: testData
+    });
 
     return res.json({
       success: true,
@@ -594,7 +453,7 @@ router.post('/test-repayment-plan', async (_req, res) => {
 });
 
 // Test endpoint - Loan repayment
-router.post('/test-loan-repayment', async (_req, res) => {
+router.post('/test-loan-repayment', requireJwt, async (_req, res) => {
   try {
     const testData = {
       "Alias": "1403990450033",
@@ -610,20 +469,8 @@ router.post('/test-loan-repayment', async (_req, res) => {
     console.log('===========================');
 
     let response;
-    if (process.env.USE_MOCK_API === 'true') {
-      // Mock response for loan repayment
-      response = {
-        status: 200,
-        data: {
-          Id: 0,
-          Code: 200,
-          Msg: "OK"
-        }
-      };
-    } else {
-      const aspektClient = require('../middleware/aspektClient');
-      response = await aspektClient.post(`/api/loanRepayment/${requestId}`, testData);
-    }
+    const aspektClient = require('../middleware/aspektClient');
+    response = await aspektClient.post(`/api/loanRepayment/${requestId}`, testData);
 
     return res.json({
       success: true,
@@ -648,7 +495,7 @@ router.post('/test-loan-repayment', async (_req, res) => {
 });
 
 // Get all ongoing loan applications
-router.get('/applications/:alias', async (req, res) => {
+router.get('/applications/:alias', requireJwt, async (req, res) => {
   const { alias } = req.params;
 
   if (!alias) {
@@ -662,47 +509,9 @@ router.get('/applications/:alias', async (req, res) => {
     let response;
     const requestId = uuid();
 
-    if (process.env.USE_MOCK_API === 'true') {
-      // Mock response for ongoing loan applications
-      response = {
-        status: 200,
-        data: {
-          Id: 68291,
-          Code: 200,
-          Msg: "OK",
-          Body: {
-            Applications: [
-              {
-                Alias: alias,
-                Product: "04-05 MF GCV",
-                ApplicationNumber: "APL-2847597/21",
-                Amount: 20000.0,
-                NumberOfInstallments: "12",
-                ApplicationDate: "15.01.2024",
-                InterestRate: 12.5,
-                ArrangementFee: 2.5,
-                Status: "Under Review"
-              },
-              {
-                Alias: alias,
-                Product: "04-03 MF AGRICULTURE",
-                ApplicationNumber: "APL-2847598/21",
-                Amount: 35000.0,
-                NumberOfInstallments: "24",
-                ApplicationDate: "20.01.2024",
-                InterestRate: 10.0,
-                ArrangementFee: 3.0,
-                Status: "Approved"
-              }
-            ]
-          }
-        }
-      };
-    } else {
-      response = await aspektClient.get(`/api/getAllOngoingLoanApplications/${requestId}`, {
-        data: { Alias: alias }
-      });
-    }
+    response = await aspektClient.get(`/api/getAllOngoingLoanApplications/${requestId}`, {
+      data: { Alias: alias }
+    });
 
     // Check for API errors (both HTTP status and API response code)
     if (response.status !== 200 || response.data.Code !== 200) {
@@ -745,7 +554,7 @@ router.get('/applications/:alias', async (req, res) => {
 });
 
 // Create loan application
-router.post('/application/create', async (_req, res) => {
+router.post('/application/create', requireJwt, async (_req, res) => {
   const requestId = uuid();
 
   try {
@@ -762,28 +571,12 @@ router.post('/application/create', async (_req, res) => {
 
     let response;
 
-    if (process.env.USE_MOCK_API === 'true') {
-      // Mock response for loan application creation
-      response = {
-        status: 200,
-        data: {
-          Id: 26838,
-          Code: 200,
-          Msg: "OK",
-          Body: {
-            Alias: applicationData.Alias,
-            ApplicationNumber: `APL-${String(Math.floor(Math.random() * 999999)).padStart(6, '0')}/20`
-          }
-        }
-      };
-    } else {
-      console.log('=== CREATE LOAN APPLICATION DEBUG ===');
-      console.log('URL:', `/api/createLoanApplication/${requestId}`);
-      console.log('Data being sent:', JSON.stringify(applicationData, null, 2));
-      console.log('=====================================');
+    console.log('=== CREATE LOAN APPLICATION DEBUG ===');
+    console.log('URL:', `/api/createLoanApplication/${requestId}`);
+    console.log('Data being sent:', JSON.stringify(applicationData, null, 2));
+    console.log('=====================================');
 
-      response = await aspektClient.post(`/api/createLoanApplication/${requestId}`, applicationData);
-    }
+    response = await aspektClient.post(`/api/createLoanApplication/${requestId}`, applicationData);
 
     // Check for API errors (both HTTP status and API response code)
     if (response.status !== 200 || response.data.Code !== 200) {
@@ -838,7 +631,7 @@ router.post('/application/create', async (_req, res) => {
 });
 
 // Get all loan applications on date
-router.post('/applications-on-date', async (req, res) => {
+router.post('/applications-on-date', requireJwt, async (req, res) => {
   const { Date } = req.body;
 
   if (!Date) {
@@ -861,61 +654,14 @@ router.post('/applications-on-date', async (req, res) => {
     let response;
     const requestId = uuid();
 
-    if (process.env.USE_MOCK_API === 'true') {
-      // Mock response for loan applications on date
-      response = {
-        status: 200,
-        data: {
-          Id: 68292,
-          Code: 200,
-          Msg: "OK",
-          Body: [
-            {
-              Alias: "USR000000345",
-              ApplicationNumber: "APL-2847597/21",
-              LoanNumber: "LN001234567",
-              Amount: 25000,
-              FirstInstallmentDate: "15.01.2024",
-              MaturityDate: "15.01.2025",
-              InstallmentAmount: 2250.50,
-              NumberOfInstallments: 12,
-              StatusCode: "200",
-              Status: "Approved",
-              Note: "OK"
-            },
-            {
-              Alias: "USR000000346",
-              ApplicationNumber: "APL-2847598/21",
-              Amount: 15000,
-              FirstInstallmentDate: "20.01.2024",
-              MaturityDate: "20.07.2024",
-              InstallmentAmount: 2750.00,
-              NumberOfInstallments: 6,
-              StatusCode: "201",
-              Status: "Pending",
-              Note: "Under review"
-            },
-            {
-              Alias: "USR000000347",
-              ApplicationNumber: "APL-2847599/21",
-              Amount: 50000,
-              StatusCode: "202",
-              Status: "Rejected",
-              Note: "Insufficient credit score"
-            }
-          ]
-        }
-      };
-    } else {
-      console.log('=== GET LOAN APPLICATIONS ON DATE DEBUG ===');
-      console.log('URL:', `/api/getAllLoanApplicationsOnDate/${requestId}`);
-      console.log('Date being sent:', Date);
-      console.log('==========================================');
+    console.log('=== GET LOAN APPLICATIONS ON DATE DEBUG ===');
+    console.log('URL:', `/api/getAllLoanApplicationsOnDate/${requestId}`);
+    console.log('Date being sent:', Date);
+    console.log('==========================================');
 
-      response = await aspektClient.get(`/api/getAllLoanApplicationsOnDate/${requestId}`, {
-        data: { Date: Date }
-      });
-    }
+    response = await aspektClient.get(`/api/getAllLoanApplicationsOnDate/${requestId}`, {
+      data: { Date: Date }
+    });
 
     // Check for API errors
     if (response.status !== 200 || response.data.Code !== 200) {
@@ -966,7 +712,7 @@ router.post('/applications-on-date', async (req, res) => {
 });
 
 // Test endpoint - Create loan application
-router.post('/test-create-loan-application', async (_req, res) => {
+router.post('/test-create-loan-application', requireJwt, async (_req, res) => {
   try {
     const testData = {
       "Alias": "1403990450033",
@@ -985,24 +731,8 @@ router.post('/test-create-loan-application', async (_req, res) => {
     console.log('=====================================');
 
     let response;
-    if (process.env.USE_MOCK_API === 'true') {
-      // Mock response for create loan application
-      response = {
-        status: 200,
-        data: {
-          Id: 26838,
-          Code: 200,
-          Msg: "OK",
-          Body: {
-            Alias: testData.Alias,
-            ApplicationNumber: "APL-005051/20"
-          }
-        }
-      };
-    } else {
-      const aspektClient = require('../middleware/aspektClient');
-      response = await aspektClient.post(`/api/createLoanApplication/${requestId}`, testData);
-    }
+    const aspektClient = require('../middleware/aspektClient');
+    response = await aspektClient.post(`/api/createLoanApplication/${requestId}`, testData);
 
     return res.json({
       success: true,

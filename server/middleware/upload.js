@@ -9,7 +9,10 @@ const storage = multer.diskStorage({
 
 const fileFilter = (req, file, cb) => {
   const allowed = ['image/jpeg', 'image/png', 'application/pdf'];
-  cb(null, allowed.includes(file.mimetype));
+  if (allowed.includes(file.mimetype)) return cb(null, true);
+  const err = new Error(`Unsupported file type: ${file.mimetype}. Allowed: ${allowed.join(', ')}`);
+  err.statusCode = 400;
+  cb(err);
 };
 
 module.exports = multer({

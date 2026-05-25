@@ -1,8 +1,5 @@
 const { v4: uuidv4 } = require('uuid');
 const aspektClient = require('../middleware/aspektClient');
-const loanMocks = require('../mocks/loan.mock');
-
-const useMockAPI = process.env.USE_MOCK_API === 'true';
 
 class LoanService {
 
@@ -13,10 +10,6 @@ class LoanService {
    */
   async getActiveLoans(alias) {
     const requestId = uuidv4();
-
-    if (useMockAPI) {
-      return loanMocks.getActiveLoans(alias);
-    }
 
     try {
       const response = await aspektClient.get(`/api/getActiveLoans/${requestId}`, {
@@ -54,10 +47,6 @@ class LoanService {
   async getLoan(loanNumber, alias) {
     const requestId = uuidv4();
 
-    if (useMockAPI) {
-      return loanMocks.getLoan(loanNumber, alias);
-    }
-
     try {
       const response = await aspektClient.get(`/api/getLoan/${requestId}`, {
         data: {
@@ -92,10 +81,6 @@ class LoanService {
    */
   async getRepaymentPlan(alias, loanNumber) {
     const requestId = uuidv4();
-
-    if (useMockAPI) {
-      return loanMocks.getRepaymentPlan(alias, loanNumber);
-    }
 
     try {
       const response = await aspektClient.get(`/api/repaymentPlan/${requestId}`, {
@@ -150,17 +135,17 @@ class LoanService {
       // Step 1: Validate loan ownership (CRITICAL for security)
       const activeLoansResponse = await this.getActiveLoans(alias);
 
-      if (activeLoansResponse.status !== 200) {
-        // Return the error from getActiveLoans (402: Person doesn't exist, 420: No active loans)
+      if (activeLoansResponse.status !== 200 || activeLoansResponse.data?.Code !== 200) {
+        // Aspekt encodes business errors as Code !== 200 with HTTP 200
+        // (e.g. 402 person doesn't exist, 420 no active loans).
         return {
           success: false,
-          error: activeLoansResponse.data.Msg,
-          code: activeLoansResponse.data.Code
+          error: activeLoansResponse.data?.Msg || 'Failed to fetch active loans',
+          code: activeLoansResponse.data?.Code ?? activeLoansResponse.status
         };
       }
 
-      // Check if the requested loan number exists in user's active loans
-      const userLoans = activeLoansResponse.data.Body.ActiveLoans.Loans;
+      const userLoans = activeLoansResponse.data?.Body?.ActiveLoans?.Loans ?? [];
       const hasLoan = userLoans.some(loan => loan.LoanNumber === loanNumber);
 
       if (!hasLoan) {

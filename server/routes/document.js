@@ -1,19 +1,20 @@
 const express = require('express');
+const multer = require('multer');
 const { v4: uuid } = require('uuid');
 const aspektClient = require('../middleware/aspektClient');
-const documentMocks = require('../mocks/document.mock');
 const upload = require('../middleware/upload');
+const requireJwt = require('../middleware/requireJwt');
 const fs = require('fs');
 const path = require('path');
 
 const router = express.Router();
 
 // TODO 3: Document upload endpoint
-router.post('/upload', upload.fields([
+router.post('/upload', requireJwt, upload.fields([
   { name: 'selfie', maxCount: 1 },
   { name: 'idDocument', maxCount: 1 }
 ]), async (req, res) => {
-  const { contactCode } = req.body;
+  const { contactCode } = req.body || {};
   const uploadedFiles = [];
 
   if (!contactCode) {
@@ -45,13 +46,8 @@ router.post('/upload', upload.fields([
         }
       };
 
-      let response;
-      if (process.env.USE_MOCK_API === 'true') {
-        response = documentMocks.createDocument();
-      } else {
-        const requestId = uuid();
-        response = await aspektClient.post(`/api/createDocument/${requestId}`, documentData);
-      }
+      const requestId = uuid();
+      const response = await aspektClient.post(`/api/createDocument/${requestId}`, documentData);
 
       if (response.status === 200) {
         documentIds.push(response.data.Body.DocumentFileId);
@@ -85,13 +81,8 @@ router.post('/upload', upload.fields([
         }
       };
 
-      let response;
-      if (process.env.USE_MOCK_API === 'true') {
-        response = documentMocks.createDocument();
-      } else {
-        const requestId = uuid();
-        response = await aspektClient.post(`/api/createDocument/${requestId}`, documentData);
-      }
+      const requestId = uuid();
+      const response = await aspektClient.post(`/api/createDocument/${requestId}`, documentData);
 
       if (response.status === 200) {
         documentIds.push(response.data.Body.DocumentFileId);
@@ -120,6 +111,12 @@ router.post('/upload', upload.fields([
       }
     });
   }
+});
+
+router.use((err, req, res, next) => {
+  if (err instanceof multer.MulterError) return res.status(400).json({ error: err.message });
+  if (err && err.statusCode === 400) return res.status(400).json({ error: err.message });
+  return next(err);
 });
 
 module.exports = router;
