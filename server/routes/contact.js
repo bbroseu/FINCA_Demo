@@ -149,7 +149,7 @@ router.post('/filter', requireJwt, async (req, res) => {
   }
 });
 
-router.post('/register', requireJwt, upload.fields([
+router.post('/register', upload.fields([
   { name: 'selfie', maxCount: 1 },
   { name: 'idDocument', maxCount: 1 },
   { name: 'utilityBill', maxCount: 1 }
