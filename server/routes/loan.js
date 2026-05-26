@@ -3,11 +3,23 @@ const { v4: uuid } = require('uuid');
 const aspektClient = require('../middleware/aspektClient');
 const loanService = require('../services/loanService');
 const requireJwt = require('../middleware/requireJwt');
+const requireAnyJwt = require('../middleware/requireAnyJwt');
 const router = express.Router();
+
+// For :alias routes: when the caller is a customer, ensure the alias matches
+// their own personal_number — staff/admin tokens pass through unchanged.
+function ensureAliasOwnership(req, res, next) {
+  if (req.actor?.type === 'customer') {
+    if (req.params.alias !== req.customer.personal_number) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+  }
+  next();
+}
 
 // GET /api/loan/details/:alias/:loanNumber
 // Main endpoint to get consolidated loan details for an authenticated user
-router.get('/details/:alias/:loanNumber', requireJwt, async (req, res) => {
+router.get('/details/:alias/:loanNumber', requireAnyJwt, ensureAliasOwnership, async (req, res) => {
   try {
     const { alias, loanNumber } = req.params;
 
@@ -44,7 +56,7 @@ router.get('/details/:alias/:loanNumber', requireJwt, async (req, res) => {
 });
 
 // Get active loans for ownership validation (can be used independently)
-router.get('/active/:alias', requireJwt, async (req, res) => {
+router.get('/active/:alias', requireAnyJwt, ensureAliasOwnership, async (req, res) => {
   try {
     const { alias } = req.params;
 
@@ -102,7 +114,7 @@ router.get('/active/:alias', requireJwt, async (req, res) => {
 
 // GET /api/loan/info/:alias/:loanNumber
 // Get basic loan information (without repayment plan)
-router.get('/info/:alias/:loanNumber', requireJwt, async (req, res) => {
+router.get('/info/:alias/:loanNumber', requireAnyJwt, ensureAliasOwnership, async (req, res) => {
   try {
     const { alias, loanNumber } = req.params;
 
@@ -187,7 +199,7 @@ router.get('/info/:alias/:loanNumber', requireJwt, async (req, res) => {
 
 // GET /api/loan/repayment/:alias/:loanNumber
 // Get repayment plan for a loan
-router.get('/repayment/:alias/:loanNumber', requireJwt, async (req, res) => {
+router.get('/repayment/:alias/:loanNumber', requireAnyJwt, ensureAliasOwnership, async (req, res) => {
   try {
     const { alias, loanNumber } = req.params;
 
@@ -495,7 +507,7 @@ router.post('/test-loan-repayment', requireJwt, async (_req, res) => {
 });
 
 // Get all ongoing loan applications
-router.get('/applications/:alias', requireJwt, async (req, res) => {
+router.get('/applications/:alias', requireAnyJwt, ensureAliasOwnership, async (req, res) => {
   const { alias } = req.params;
 
   if (!alias) {

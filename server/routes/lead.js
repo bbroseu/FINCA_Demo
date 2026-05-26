@@ -4,17 +4,30 @@ const aspektClient = require('../middleware/aspektClient');
 const leadService = require('../services/leadService');
 const leadStoreService = require('../services/leadStoreService');
 const requireJwt = require('../middleware/requireJwt');
+const requireAnyJwt = require('../middleware/requireAnyJwt');
 const requireAdmin = require('../middleware/requireAdmin');
 
 function isAdmin(req) {
   return req.user?.role === 'admin';
 }
+
+// For :alias routes: when the caller is a customer, force the alias path-param
+// to match their own personal_number so they can't query another customer's data.
+function ensureAliasOwnership(req, res, next) {
+  if (req.actor?.type === 'customer') {
+    if (req.params.alias !== req.customer.personal_number) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+  }
+  next();
+}
+
 const upload = require('../middleware/upload');
 
 const router = express.Router();
 
 // Step 3.1 - Get available loan products
-router.get('/products/:alias', requireJwt, async (req, res) => {
+router.get('/products/:alias', requireAnyJwt, ensureAliasOwnership, async (req, res) => {
   const { alias } = req.params;
 
   if (!alias) {
@@ -52,7 +65,7 @@ router.get('/products/:alias', requireJwt, async (req, res) => {
 });
 
 // Step 3.1 - Get products with detailed levels
-router.get('/products-with-levels/:alias', requireJwt, async (req, res) => {
+router.get('/products-with-levels/:alias', requireAnyJwt, ensureAliasOwnership, async (req, res) => {
   const { alias } = req.params;
 
   if (!alias) {
@@ -65,6 +78,13 @@ router.get('/products-with-levels/:alias', requireJwt, async (req, res) => {
     const response = await aspektClient.get(`/api/getProductsWithLevels/${requestId}`, {
       data: { Alias: alias }
     });
+
+    console.log('=== /products-with-levels response ===');
+    console.log('alias:', alias);
+    console.log('status:', response.status);
+    console.log('aspekt code:', response.data?.Code, response.data?.Msg);
+    console.log('body:', JSON.stringify(response.data?.Body, null, 2));
+    console.log('======================================');
 
     if (response.status === 200) {
       return res.json({
@@ -90,7 +110,7 @@ router.get('/products-with-levels/:alias', requireJwt, async (req, res) => {
 });
 
 // Step 3.2 - Get loan purposes for product
-router.get('/loan-purposes/:product', requireJwt, async (req, res) => {
+router.get('/loan-purposes/:product', requireAnyJwt, async (req, res) => {
   const { product } = req.params;
 
   if (!product) {
@@ -128,7 +148,7 @@ router.get('/loan-purposes/:product', requireJwt, async (req, res) => {
 });
 
 // Step 3.2 - Get business types for product
-router.get('/business-types/:product', requireJwt, async (req, res) => {
+router.get('/business-types/:product', requireAnyJwt, async (req, res) => {
   const { product } = req.params;
 
   if (!product) {
@@ -165,7 +185,7 @@ router.get('/business-types/:product', requireJwt, async (req, res) => {
   }
 });
 
-router.get('/offices', requireJwt, async (req, res) => {
+router.get('/offices', requireAnyJwt, async (req, res) => {
   try {
     const requestId = uuid();
     console.log(requestId);
@@ -193,7 +213,7 @@ router.get('/offices', requireJwt, async (req, res) => {
 });
 
 // Step 3.3 - Get all places
-router.get('/places', requireJwt, async (req, res) => {
+router.get('/places', requireAnyJwt, async (req, res) => {
   try {
     const requestId = uuid();
 
@@ -220,7 +240,7 @@ router.get('/places', requireJwt, async (req, res) => {
 });
 
 // Step 3.4 - Get all lead sources
-router.get('/sources', requireJwt, async (req, res) => {
+router.get('/sources', requireAnyJwt, async (req, res) => {
   try {
     const requestId = uuid();
 
@@ -247,7 +267,7 @@ router.get('/sources', requireJwt, async (req, res) => {
 });
 
 // Utility endpoint - Get mobile app lead source code
-router.get('/mobile-lead-source', requireJwt, async (req, res) => {
+router.get('/mobile-lead-source', requireAnyJwt, async (req, res) => {
   try {
     const mobileSourceCode = await leadService.getMobileAppLeadSourceCode();
 

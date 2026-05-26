@@ -12,6 +12,7 @@ const loanRoutes = require('./routes/loan');
 const scormRoutes = require('./routes/scorm');
 const authRoutes = require('./routes/auth');
 const adminRoutes = require('./routes/admin');
+const customerAuthRoutes = require('./routes/customerAuth');
 
 function buildApp() {
   const app = express();
@@ -29,6 +30,7 @@ function buildApp() {
   app.use(passport.initialize());
 
   app.use('/api/auth', authRoutes);
+  app.use('/api/customer/auth', customerAuthRoutes);
   app.use('/api/admin', adminRoutes);
   app.use('/api/contact', contactRoutes);
   app.use('/api/document', documentRoutes);

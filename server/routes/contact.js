@@ -22,7 +22,7 @@ function collectUploadedImages(reqFiles) {
 
 const router = express.Router();
 
-router.get('/check', requireJwt, async (req, res) => {
+router.get('/check', async (req, res) => {
   const { personalNumber } = req.query;
 
 
