@@ -11,6 +11,18 @@ function isAdmin(req) {
   return req.user?.role === 'admin';
 }
 
+// True if the caller created (or, for admins, may inspect) the given lead row.
+function callerOwnsLead(req, lead) {
+  if (req.actor?.type === 'staff') {
+    if (req.user.role === 'admin') return true;
+    return lead.created_by_auth_user_id === req.user.id;
+  }
+  if (req.actor?.type === 'customer') {
+    return lead.created_by_contact_id === req.customer.contact_id;
+  }
+  return false;
+}
+
 // For :alias routes: when the caller is a customer, force the alias path-param
 // to match their own personal_number so they can't query another customer's data.
 function ensureAliasOwnership(req, res, next) {
@@ -337,7 +349,7 @@ router.post('/check-status', requireJwt, async (req, res) => {
 });
 
 // Step 3.7 - Create lead endpoint
-router.post('/create', requireJwt, async (req, res) => {
+router.post('/create', requireAnyJwt, async (req, res) => {
   try {
     // Validate required fields
     const validation = leadService.validateLeadData(req.body);
@@ -361,7 +373,8 @@ router.post('/create', requireJwt, async (req, res) => {
         await leadStoreService.persistLead({
           requestBody: req.body,
           aspektBody: response.data.Body,
-          createdByAuthUserId: req.user.id,
+          createdByAuthUserId: req.actor?.type === 'staff' ? req.user.id : null,
+          createdByContactId: req.actor?.type === 'customer' ? req.customer.contact_id : null,
         });
       } catch (persistErr) {
         console.error('Local lead persistence failed:', persistErr.message);
@@ -434,12 +447,18 @@ router.get('/all', requireJwt, requireAdmin, async (req, res) => {
   }
 });
 
-// Leads created by the authenticated user.
+// Leads created by the authenticated caller.
+// Staff sees leads they created (created_by_auth_user_id).
+// Customers see leads they created (created_by_contact_id).
 // Query params: ?status=&search=&limit=&offset=
-router.get('/mine', requireJwt, async (req, res) => {
+router.get('/mine', requireAnyJwt, async (req, res) => {
   try {
+    const filter = req.actor?.type === 'customer'
+      ? { createdByContactId: req.customer.contact_id }
+      : { createdByAuthUserId: req.user.id };
+
     const result = await leadStoreService.listLeads({
-      createdByAuthUserId: req.user.id,
+      ...filter,
       status: req.query.status,
       search: req.query.search,
       limit: req.query.limit,
@@ -517,7 +536,7 @@ router.get('/user-profile/:alias', requireJwt, async (req, res) => {
 // Update local lead status. Note: Aspekt does not accept status updates from
 // merchants — the bank pushes status via notifications. This endpoint updates
 // only the merchant-side view.
-router.patch('/:leadId/status', requireJwt, async (req, res) => {
+router.patch('/:leadId/status', requireAnyJwt, async (req, res) => {
   const { leadId } = req.params;
   const { status } = req.body || {};
 
@@ -526,13 +545,10 @@ router.patch('/:leadId/status', requireJwt, async (req, res) => {
   }
 
   try {
-    // Ownership check: non-admins may only update their own leads.
-    if (!isAdmin(req)) {
-      const existing = await leadStoreService.getLeadById(leadId);
-      if (!existing) return res.status(404).json({ success: false, error: 'Lead not found' });
-      if (existing.created_by_auth_user_id !== req.user.id) {
-        return res.status(403).json({ success: false, error: 'Forbidden' });
-      }
+    const existing = await leadStoreService.getLeadById(leadId);
+    if (!existing) return res.status(404).json({ success: false, error: 'Lead not found' });
+    if (!callerOwnsLead(req, existing)) {
+      return res.status(403).json({ success: false, error: 'Forbidden' });
     }
 
     const updated = await leadStoreService.updateLeadStatus(leadId, status);
@@ -576,7 +592,7 @@ router.get('/', requireJwt, (_req, res) => {
 // Get lead by lead_id (numeric) or lead_number (e.g. "000250/21").
 // Reads the local row and, when a lead_number is known, enriches with
 // Aspekt's live status from POST /api/checkLeadStatus.
-router.get('/:leadId', requireJwt, async (req, res) => {
+router.get('/:leadId', requireAnyJwt, async (req, res) => {
   const { leadId } = req.params;
   if (!leadId) {
     return res.status(400).json({ error: 'Lead ID parameter is required' });
@@ -587,7 +603,7 @@ router.get('/:leadId', requireJwt, async (req, res) => {
     if (!lead) {
       return res.status(404).json({ success: false, error: 'Lead not found' });
     }
-    if (!isAdmin(req) && lead.created_by_auth_user_id !== req.user.id) {
+    if (!callerOwnsLead(req, lead)) {
       return res.status(403).json({ success: false, error: 'Forbidden' });
     }
 

@@ -28,20 +28,23 @@ function extractPersonalNumber(body) {
 // Persistence (called by POST /create after Aspekt success)
 // ------------------------------------------------------------------
 
-async function persistLead({ requestBody, aspektBody, createdByAuthUserId }) {
+async function persistLead({ requestBody, aspektBody, createdByAuthUserId, createdByContactId }) {
   const leadId = aspektBody?.LeadId;
   const leadNumber = aspektBody?.LeadNumber;
   if (!leadId || !leadNumber) {
     throw new Error('Cannot persist lead: missing LeadId or LeadNumber from Aspekt response');
   }
-  if (!createdByAuthUserId) {
-    throw new Error('Cannot persist lead: createdByAuthUserId is required');
+  const creators = [createdByAuthUserId, createdByContactId].filter((v) => v != null);
+  if (creators.length !== 1) {
+    throw new Error('Cannot persist lead: exactly one of createdByAuthUserId / createdByContactId must be set');
   }
 
   const personalNumber = extractPersonalNumber(requestBody);
 
-  let contactId = null;
-  if (personalNumber) {
+  // contact_id (link to a known customer profile) is derived from the personal_number
+  // for staff-created leads; for customer-created leads it's the JWT's contact_id.
+  let contactId = createdByContactId ?? null;
+  if (contactId == null && personalNumber) {
     const c = await db.query(
       `SELECT contact_id FROM users WHERE personal_number = $1`,
       [personalNumber]
@@ -55,16 +58,18 @@ async function persistLead({ requestBody, aspektBody, createdByAuthUserId }) {
 
     await client.query(
       `INSERT INTO leads
-         (lead_id, lead_number, created_by_auth_user_id, contact_id, personal_number,
+         (lead_id, lead_number, created_by_auth_user_id, created_by_contact_id,
+          contact_id, personal_number,
           name, mobile, email,
           place_code, lead_source_code, lead_category_code,
           loan_amount, priority, note, status)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
        ON CONFLICT (lead_id) DO NOTHING`,
       [
         leadId,
         leadNumber,
-        createdByAuthUserId,
+        createdByAuthUserId ?? null,
+        createdByContactId ?? null,
         contactId,
         personalNumber,
         requestBody.Name,
@@ -116,7 +121,7 @@ async function persistLead({ requestBody, aspektBody, createdByAuthUserId }) {
 // Queries (back the GET endpoints)
 // ------------------------------------------------------------------
 
-async function listLeads({ status, search, createdByAuthUserId, limit = 50, offset = 0 } = {}) {
+async function listLeads({ status, search, createdByAuthUserId, createdByContactId, limit = 50, offset = 0 } = {}) {
   if (status && !VALID_STATUSES.includes(status)) {
     throw httpError(400, `status must be one of ${VALID_STATUSES.join(', ')}`);
   }
@@ -129,6 +134,11 @@ async function listLeads({ status, search, createdByAuthUserId, limit = 50, offs
   if (createdByAuthUserId !== undefined && createdByAuthUserId !== null) {
     params.push(createdByAuthUserId);
     where.push(`created_by_auth_user_id = $${params.length}`);
+  }
+
+  if (createdByContactId !== undefined && createdByContactId !== null) {
+    params.push(createdByContactId);
+    where.push(`created_by_contact_id = $${params.length}`);
   }
 
   if (status) {
@@ -155,7 +165,8 @@ async function listLeads({ status, search, createdByAuthUserId, limit = 50, offs
   const offsetIdx = params.length;
 
   const itemsQ = db.query(
-    `SELECT lead_id, lead_number, created_by_auth_user_id, contact_id, personal_number,
+    `SELECT lead_id, lead_number, created_by_auth_user_id, created_by_contact_id,
+            contact_id, personal_number,
             name, mobile, email,
             place_code, lead_source_code, lead_category_code,
             loan_amount, priority, status, note,

@@ -51,7 +51,11 @@ async function listCourses({ status, limit = 50, offset = 0 } = {}) {
   const itemsQ = db.query(
     `SELECT c.id, c.title, c.description, c.status, c.created_by,
             c.created_at, c.updated_at,
-            (SELECT COUNT(*)::int FROM scorm_packages p WHERE p.course_id = c.id) AS package_count
+            (SELECT COUNT(*)::int FROM scorm_packages p WHERE p.course_id = c.id) AS package_count,
+            (SELECT p.id FROM scorm_packages p
+              WHERE p.course_id = c.id AND p.status = 'ready'
+              ORDER BY p.uploaded_at DESC
+              LIMIT 1) AS latest_package_id
        FROM courses c
        ${whereSql}
        ORDER BY c.created_at DESC

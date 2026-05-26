@@ -10,30 +10,28 @@ function httpError(status, message) {
 }
 
 const ATTEMPT_COLUMNS = `
-  id, package_id, user_id, attempt_number,
+  id, package_id, customer_contact_id, attempt_number,
   completion_status, success_status,
   score_raw, score_max,
   session_time_seconds, suspend_data,
   last_accessed_at
 `;
 
-// Start a new attempt OR resume the current incomplete one for (package_id, user_id).
-// Returns the attempt row.
-async function startOrResumeAttempt(packageId, userId) {
-  // Make sure the package exists
+// Start a new attempt OR resume the current incomplete one for
+// (package_id, customer_contact_id). Returns the attempt row.
+async function startOrResumeAttempt(packageId, customerContactId) {
   const pkg = await db.query(`SELECT id, course_id, status FROM scorm_packages WHERE id = $1`, [packageId]);
   if (pkg.rowCount === 0) throw httpError(404, 'Package not found');
   if (pkg.rows[0].status !== 'ready') throw httpError(409, `Package not ready (status: ${pkg.rows[0].status})`);
 
-  // Resume any incomplete attempt
   const existing = await db.query(
     `SELECT ${ATTEMPT_COLUMNS}
        FROM scorm_tracking
-      WHERE package_id = $1 AND user_id = $2
+      WHERE package_id = $1 AND customer_contact_id = $2
         AND completion_status <> 'completed'
       ORDER BY attempt_number DESC
       LIMIT 1`,
-    [packageId, userId]
+    [packageId, customerContactId]
   );
   if (existing.rowCount > 0) {
     await db.query(
@@ -43,23 +41,22 @@ async function startOrResumeAttempt(packageId, userId) {
     return { ...existing.rows[0], resumed: true };
   }
 
-  // Otherwise start a new attempt: max(attempt_number) + 1 for this (package, user)
   const next = await db.query(
     `SELECT COALESCE(MAX(attempt_number), 0) + 1 AS n
        FROM scorm_tracking
-      WHERE package_id = $1 AND user_id = $2`,
-    [packageId, userId]
+      WHERE package_id = $1 AND customer_contact_id = $2`,
+    [packageId, customerContactId]
   );
   const attemptNumber = next.rows[0].n;
 
   const inserted = await db.query(
     `INSERT INTO scorm_tracking
-       (package_id, user_id, attempt_number,
+       (package_id, customer_contact_id, attempt_number,
         completion_status, success_status,
         session_time_seconds, last_accessed_at)
      VALUES ($1, $2, $3, 'incomplete', 'unknown', 0, now())
      RETURNING ${ATTEMPT_COLUMNS}`,
-    [packageId, userId, attemptNumber]
+    [packageId, customerContactId, attemptNumber]
   );
   return { ...inserted.rows[0], resumed: false };
 }
@@ -124,10 +121,6 @@ async function updateAttempt(attemptId, patch) {
 
   sets.push(`last_accessed_at = now()`);
 
-  if (sets.length === 1) {
-    // only last_accessed_at; nothing else to update — touch and return
-  }
-
   params.push(attemptId);
   const { rows } = await db.query(
     `UPDATE scorm_tracking SET ${sets.join(', ')}
@@ -138,9 +131,9 @@ async function updateAttempt(attemptId, patch) {
   return rows[0] ?? null;
 }
 
-async function listAttemptsForUser(userId) {
+async function listAttemptsForCustomer(customerContactId) {
   const { rows } = await db.query(
-    `SELECT t.id, t.package_id, t.user_id, t.attempt_number,
+    `SELECT t.id, t.package_id, t.customer_contact_id, t.attempt_number,
             t.completion_status, t.success_status,
             t.score_raw, t.score_max,
             t.session_time_seconds, t.last_accessed_at,
@@ -153,9 +146,9 @@ async function listAttemptsForUser(userId) {
        FROM scorm_tracking t
        JOIN scorm_packages p ON p.id = t.package_id
        JOIN courses        c ON c.id = p.course_id
-      WHERE t.user_id = $1
+      WHERE t.customer_contact_id = $1
       ORDER BY t.last_accessed_at DESC NULLS LAST, t.id DESC`,
-    [userId]
+    [customerContactId]
   );
   return rows;
 }
@@ -164,5 +157,5 @@ module.exports = {
   startOrResumeAttempt,
   getAttemptById,
   updateAttempt,
-  listAttemptsForUser,
+  listAttemptsForCustomer,
 };

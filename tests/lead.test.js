@@ -3,10 +3,11 @@ const { setAspektResponse, resetAspektMock } = require('./helpers/aspektMock');
 
 const makeApp = require('./helpers/app');
 const { resetDb, closeDb } = require('./helpers/db');
-const { createUserWithToken, bearer } = require('./helpers/auth');
+const { createUserWithToken, createCustomerWithToken, bearer } = require('./helpers/auth');
 
 let app;
 let staff, admin, otherStaff;
+let customer, otherCustomer;
 
 beforeAll(() => { app = makeApp(); });
 beforeEach(async () => {
@@ -15,6 +16,8 @@ beforeEach(async () => {
   staff = await createUserWithToken({ email: 's@test.com' });
   admin = await createUserWithToken({ email: 'a@test.com', role: 'admin' });
   otherStaff = await createUserWithToken({ email: 'o@test.com' });
+  customer = await createCustomerWithToken({ email: 'cust@test.com' });
+  otherCustomer = await createCustomerWithToken({ email: 'other@test.com' });
 });
 afterAll(async () => { await closeDb(); });
 
@@ -234,5 +237,56 @@ describe('PATCH /api/lead/:leadId/status', () => {
   test('404 when lead unknown', async () => {
     const res = await request(app).patch('/api/lead/9999999/status').set(bearer(admin.token)).send({ status: 'Closed' });
     expect(res.status).toBe(404);
+  });
+});
+
+describe('Customer-initiated leads', () => {
+  test('customer can create a lead; stored with created_by_contact_id and no auth-user id', async () => {
+    const res = await createLead(customer.token);
+    expect(res.status).toBe(200);
+    expect(res.body.data.leadId).toBe(1111366);
+
+    const mine = await request(app).get('/api/lead/mine').set(bearer(customer.token));
+    expect(mine.body.items).toHaveLength(1);
+    expect(mine.body.items[0].created_by_contact_id).toBe(customer.customer.contact_id);
+    expect(mine.body.items[0].created_by_auth_user_id).toBeNull();
+  });
+
+  test('GET /mine isolates customers from each other and from staff', async () => {
+    await createLead(customer.token);
+    await createLead(otherCustomer.token, {}, { LeadId: 2222, LeadNumber: '2222/26' });
+    await createLead(staff.token, {}, { LeadId: 3333, LeadNumber: '3333/26' });
+
+    const mine = await request(app).get('/api/lead/mine').set(bearer(customer.token));
+    expect(mine.body.items).toHaveLength(1);
+    expect(mine.body.items[0].created_by_contact_id).toBe(customer.customer.contact_id);
+  });
+
+  test('admin /all includes customer-initiated leads', async () => {
+    await createLead(customer.token);
+    const all = await request(app).get('/api/lead/all').set(bearer(admin.token));
+    expect(all.status).toBe(200);
+    expect(all.body.items.some((r) => r.created_by_contact_id === customer.customer.contact_id)).toBe(true);
+  });
+
+  test('customer cannot read another customer\'s lead', async () => {
+    await createLead(customer.token);
+    setAspektResponse('POST', '/api/checkLeadStatus/', { status: 200, data: { Code: 200, Body: {} } });
+    const res = await request(app).get('/api/lead/1111366').set(bearer(otherCustomer.token));
+    expect(res.status).toBe(403);
+  });
+
+  test('admin can read and patch a customer-initiated lead', async () => {
+    await createLead(customer.token);
+    setAspektResponse('POST', '/api/checkLeadStatus/', { status: 200, data: { Code: 200, Body: {} } });
+    expect((await request(app).get('/api/lead/1111366').set(bearer(admin.token))).status).toBe(200);
+    expect((await request(app).patch('/api/lead/1111366/status').set(bearer(admin.token)).send({ status: 'Qualified' })).status).toBe(200);
+  });
+
+  test('staff (non-admin) cannot read a customer-initiated lead', async () => {
+    await createLead(customer.token);
+    setAspektResponse('POST', '/api/checkLeadStatus/', { status: 200, data: { Code: 200, Body: {} } });
+    const res = await request(app).get('/api/lead/1111366').set(bearer(staff.token));
+    expect(res.status).toBe(403);
   });
 });

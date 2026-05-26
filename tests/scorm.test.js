@@ -5,10 +5,11 @@ require('./helpers/aspektMock');
 
 const makeApp = require('./helpers/app');
 const { resetDb, closeDb, db } = require('./helpers/db');
-const { createUserWithToken, bearer } = require('./helpers/auth');
+const { createUserWithToken, createCustomerWithToken, bearer } = require('./helpers/auth');
 
 let app;
 let staff, admin, otherStaff;
+let customer, otherCustomer;
 const SCORM_ZIP = path.resolve(__dirname, 'fixtures', 'scorm.zip');
 const STORAGE_ROOT = path.resolve(process.cwd(), 'storage', 'scorm');
 
@@ -21,6 +22,8 @@ beforeEach(async () => {
   staff = await createUserWithToken({ email: 's@test.com' });
   admin = await createUserWithToken({ email: 'a@test.com', role: 'admin' });
   otherStaff = await createUserWithToken({ email: 'o@test.com' });
+  customer = await createCustomerWithToken({ email: 'cust@test.com' });
+  otherCustomer = await createCustomerWithToken({ email: 'other@test.com' });
 });
 afterAll(async () => {
   for (const p of createdPaths) {
@@ -139,19 +142,25 @@ describe('SCORM package upload + management', () => {
   });
 });
 
-describe('SCORM attempts', () => {
+describe('SCORM attempts (customer-scoped)', () => {
   async function setupAttempt() {
     const c = await createCourse();
     const up = await uploadPackage(c.id);
     return up.body.packageId;
   }
 
+  test('staff tokens cannot reach the attempts API', async () => {
+    const pkgId = await setupAttempt();
+    expect((await request(app).post(`/api/scorm/packages/${pkgId}/attempts`).set(bearer(staff.token))).status).toBe(401);
+    expect((await request(app).get('/api/scorm/me/attempts').set(bearer(staff.token))).status).toBe(401);
+  });
+
   test('start, then resume returns 200 with resumed:true', async () => {
     const pkgId = await setupAttempt();
-    const start = await request(app).post(`/api/scorm/packages/${pkgId}/attempts`).set(bearer(staff.token));
+    const start = await request(app).post(`/api/scorm/packages/${pkgId}/attempts`).set(bearer(customer.token));
     expect(start.status).toBe(201);
     expect(start.body.resumed).toBe(false);
-    const resume = await request(app).post(`/api/scorm/packages/${pkgId}/attempts`).set(bearer(staff.token));
+    const resume = await request(app).post(`/api/scorm/packages/${pkgId}/attempts`).set(bearer(customer.token));
     expect(resume.status).toBe(200);
     expect(resume.body.resumed).toBe(true);
     expect(resume.body.id).toBe(start.body.id);
@@ -159,31 +168,33 @@ describe('SCORM attempts', () => {
 
   test('PATCH /attempts/:id updates fields for owner', async () => {
     const pkgId = await setupAttempt();
-    const start = await request(app).post(`/api/scorm/packages/${pkgId}/attempts`).set(bearer(staff.token));
-    const res = await request(app).patch(`/api/scorm/attempts/${start.body.id}`).set(bearer(staff.token))
+    const start = await request(app).post(`/api/scorm/packages/${pkgId}/attempts`).set(bearer(customer.token));
+    const res = await request(app).patch(`/api/scorm/attempts/${start.body.id}`).set(bearer(customer.token))
       .send({ completion_status: 'completed', success_status: 'passed', score_raw: 90, score_max: 100, session_time_seconds: 60, suspend_data: 'x' });
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ completion_status: 'completed', success_status: 'passed' });
   });
 
-  test('PATCH /attempts/:id by stranger -> 403; by admin -> 200', async () => {
+  test('PATCH /attempts/:id by another customer -> 403', async () => {
     const pkgId = await setupAttempt();
-    const start = await request(app).post(`/api/scorm/packages/${pkgId}/attempts`).set(bearer(staff.token));
-    expect((await request(app).patch(`/api/scorm/attempts/${start.body.id}`).set(bearer(otherStaff.token)).send({ session_time_seconds: 1 })).status).toBe(403);
-    expect((await request(app).patch(`/api/scorm/attempts/${start.body.id}`).set(bearer(admin.token)).send({ session_time_seconds: 1 })).status).toBe(200);
+    const start = await request(app).post(`/api/scorm/packages/${pkgId}/attempts`).set(bearer(customer.token));
+    const stranger = await request(app).patch(`/api/scorm/attempts/${start.body.id}`)
+      .set(bearer(otherCustomer.token))
+      .send({ session_time_seconds: 1 });
+    expect(stranger.status).toBe(403);
   });
 
   test('PATCH /attempts/9999 -> 404', async () => {
-    expect((await request(app).patch('/api/scorm/attempts/9999').set(bearer(staff.token)).send({})).status).toBe(404);
+    expect((await request(app).patch('/api/scorm/attempts/9999').set(bearer(customer.token)).send({})).status).toBe(404);
   });
 
   test('GET /me/attempts returns the caller\'s attempts only', async () => {
     const pkgId = await setupAttempt();
-    await request(app).post(`/api/scorm/packages/${pkgId}/attempts`).set(bearer(staff.token));
-    await request(app).post(`/api/scorm/packages/${pkgId}/attempts`).set(bearer(otherStaff.token));
+    await request(app).post(`/api/scorm/packages/${pkgId}/attempts`).set(bearer(customer.token));
+    await request(app).post(`/api/scorm/packages/${pkgId}/attempts`).set(bearer(otherCustomer.token));
 
-    const mine = await request(app).get('/api/scorm/me/attempts').set(bearer(staff.token));
+    const mine = await request(app).get('/api/scorm/me/attempts').set(bearer(customer.token));
     expect(mine.body.items).toHaveLength(1);
-    expect(mine.body.items[0].user_id).toBe(staff.user.id);
+    expect(mine.body.items[0].customer_contact_id).toBe(customer.customer.contact_id);
   });
 });

@@ -86,7 +86,13 @@ async function requestOtp({ personalNumber }) {
   }
   // TODO: integrate SMS gateway in production.
 
-  return { sent: true, ttl: OTP_TTL_SECONDS };
+  // Return the code itself in dev so the mobile screen can display it while no
+  // SMS gateway is wired up. Never leaked in production.
+  return {
+    sent: true,
+    ttl: OTP_TTL_SECONDS,
+    ...(process.env.NODE_ENV !== 'production' && { devCode: code }),
+  };
 }
 
 async function verifyOtp({ personalNumber, code }) {

@@ -7,6 +7,7 @@ const { processScormUpload } = require('../services/scormUploadService');
 const lessonService = require('../services/lessonService');
 const scormAttemptService = require('../services/scormAttemptService');
 const requireJwt = require('../middleware/requireJwt');
+const requireCustomerJwt = require('../middleware/requireCustomerJwt');
 
 const router = express.Router();
 
@@ -197,16 +198,16 @@ router.delete('/packages/:packageId', requireJwt, async (req, res) => {
 
 
 // =============================================================================
-// COURSE PARTICIPATION — scorm_tracking (per-user attempts)
-// All endpoints require JWT. Ownership enforced on the single-attempt routes.
+// COURSE PARTICIPATION — scorm_tracking (per-customer attempts)
+// Customer JWT required. Ownership enforced on the single-attempt route.
 // =============================================================================
 
 // POST /api/scorm/packages/:packageId/attempts
-//   Starts a new attempt, or resumes the user's current incomplete one.
-router.post('/packages/:packageId/attempts', requireJwt, async (req, res) => {
+//   Starts a new attempt, or resumes the customer's current incomplete one.
+router.post('/packages/:packageId/attempts', requireCustomerJwt, async (req, res) => {
   try {
     const packageId = parsePositiveInt(req.params.packageId, 'packageId');
-    const attempt = await scormAttemptService.startOrResumeAttempt(packageId, req.user.id);
+    const attempt = await scormAttemptService.startOrResumeAttempt(packageId, req.customer.contact_id);
     return res.status(attempt.resumed ? 200 : 201).json(attempt);
   } catch (err) {
     return sendError(res, err);
@@ -217,12 +218,12 @@ router.post('/packages/:packageId/attempts', requireJwt, async (req, res) => {
 //   Body fields (all optional): completion_status, success_status,
 //   score_raw, score_max, session_time_seconds (DELTA — accumulates),
 //   suspend_data.
-router.patch('/attempts/:attemptId', requireJwt, async (req, res) => {
+router.patch('/attempts/:attemptId', requireCustomerJwt, async (req, res) => {
   try {
     const attemptId = parsePositiveInt(req.params.attemptId, 'attemptId');
     const existing = await scormAttemptService.getAttemptById(attemptId);
     if (!existing) return res.status(404).json({ error: 'Attempt not found' });
-    if (existing.user_id !== req.user.id && req.user.role !== 'admin') {
+    if (existing.customer_contact_id !== req.customer.contact_id) {
       return res.status(403).json({ error: 'Forbidden' });
     }
     const updated = await scormAttemptService.updateAttempt(attemptId, req.body || {});
@@ -233,10 +234,10 @@ router.patch('/attempts/:attemptId', requireJwt, async (req, res) => {
 });
 
 // GET /api/scorm/me/attempts
-//   List the authenticated user's attempts (with package + course info).
-router.get('/me/attempts', requireJwt, async (req, res) => {
+//   List the authenticated customer's attempts (with package + course info).
+router.get('/me/attempts', requireCustomerJwt, async (req, res) => {
   try {
-    const items = await scormAttemptService.listAttemptsForUser(req.user.id);
+    const items = await scormAttemptService.listAttemptsForCustomer(req.customer.contact_id);
     return res.json({ items });
   } catch (err) {
     return sendError(res, err);
