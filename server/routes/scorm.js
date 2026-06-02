@@ -175,6 +175,29 @@ router.get('/packages/:packageId', requireJwt, async (req, res) => {
   }
 });
 
+// GET /api/scorm/packages/:packageId/launch
+//   Customer-readable. Returns the info the mobile player needs to load the
+//   package content over HTTP from the public /scorm static mount.
+//   launch_path is relative to the API host (prepend the client's base URL).
+router.get('/packages/:packageId/launch', requireCustomerJwt, async (req, res) => {
+  try {
+    const packageId = parsePositiveInt(req.params.packageId, 'packageId');
+    const pkg = await lessonService.getPackageById(packageId);
+    if (!pkg) return res.status(404).json({ error: 'Package not found' });
+    return res.json({
+      package_id: pkg.id,
+      scorm_version: pkg.scorm_version,
+      storage_path: pkg.storage_path,
+      entry_point: pkg.entry_point,
+      title: pkg.title,
+      // e.g. "/scorm/<uuid>/genially.html"
+      launch_path: `/${pkg.storage_path}/${pkg.entry_point}`,
+    });
+  } catch (err) {
+    return sendError(res, err);
+  }
+});
+
 router.get('/packages/:packageId/files', requireJwt, async (req, res) => {
   try {
     const packageId = parsePositiveInt(req.params.packageId, 'packageId');
