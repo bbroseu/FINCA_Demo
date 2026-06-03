@@ -326,28 +326,26 @@ router.post('/register', upload.fields([
       }
     }
 
-    const subscriptionId = uuid();
-
-    // Create subscription first
-    const subscriptionData = {
-      SubscriptionId: subscriptionId,
+    // Create the contact in CBS. Per the Aspekt API, createContact takes only the
+    // core identity fields (no SubscriptionId/ScanURLs/AdditionalInfo); document
+    // scans go through a separate createDocument call. Uploaded images are still
+    // persisted locally below.
+    const requestId = uuid();
+    const contactData = {
       FirstName: firstName,
       LastName: lastName,
       PersonalNumber: personalNumber,
       Address: address,
       Mobile: mobile,
       BirthDate: normalizedBirthDate,
-      ...(parsedScanURLs.length > 0 && { ScanURLs: parsedScanURLs }),
-      ...(parsedAdditionalInfo.length > 0 && { AdditionalInfo: parsedAdditionalInfo })
     };
 
-    const requestId = uuid();
-    const response = await aspektClient.post(`/api/createSubscription/${requestId}`, subscriptionData);
+    const response = await aspektClient.post(`/api/createContact/${requestId}`, contactData);
 
-    // Handle Aspekt response codes
-    if (response.status === 200) {
-      // CBS accepted the subscription (still pending approval over there).
-      // Persist the registration locally so we have a record before approval.
+    // CBS returns HTTP 200 and signals the real outcome via response.data.Code.
+    if (response.status === 200 && response.data?.Code === 200) {
+      // Contact created in CBS. Persist locally; the CBS ContactCode is backfilled
+      // later via getContact (e.g. on the next login/existence check).
       const saved = await customerService.createOrUpdateCustomer({
         personalNumber,
         firstName,
@@ -365,19 +363,18 @@ router.post('/register', upload.fields([
 
       return res.json({
         success: true,
-        subscriptionId,
         contactId: saved.contact_id,
         contactCode: saved.contact_code,
-        status: "pending"
+        status: "created"
       });
-    } else if (response.data?.Code === 441) {
-      return res.status(409).json({ error: 'Duplicate SubscriptionId' });
-    } else if (response.data?.Code === 442) {
-      return res.status(409).json({ error: 'Personal number already registered' });
+    } else if (response.data?.Code === 401) {
+      return res.status(409).json({ error: 'Duplicate requestId' });
     } else if (response.data?.Code === 405) {
       return res.status(409).json({ error: 'Person already exists — use login flow' });
     } else if (response.data?.Code === 491) {
       return res.status(400).json({ error: 'Invalid birth date format (use dd.mm.yyyy)' });
+    } else if (response.data?.Code === 492) {
+      return res.status(400).json({ error: 'Invalid personal number' });
     } else if (response.data?.Code === 494) {
       return res.status(400).json({ error: 'Invalid mobile number format' });
     } else if (response.data?.Code === 404) {
@@ -388,6 +385,9 @@ router.post('/register', upload.fields([
 
   } catch (error) {
     console.error('Contact registration error:', error.message);
+    console.error('  URL   :', error.config?.url);
+    console.error('  Status:', error.response?.status);
+    console.error('  Body  :', JSON.stringify(error.response?.data));
     return res.status(500).json({ error: 'Registration failed' });
   } finally {
     // Clean up temporary files — but keep them when they've been linked into
