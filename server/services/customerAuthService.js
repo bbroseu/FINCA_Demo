@@ -1,7 +1,10 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const { v4: uuid } = require('uuid');
 
 const db = require('../utils/db');
+const aspektClient = require('../middleware/aspektClient');
+const customerService = require('./customerService');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-only-change-me';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '24h';
@@ -16,6 +19,31 @@ function httpError(status, message) {
 
 function generateOtp() {
   return String(Math.floor(100000 + Math.random() * 900000));
+}
+
+// Authoritative existence check against the Aspekt core banking system.
+// Returns the contact object when the person exists, or null when they don't.
+// Throws a 502 on a genuine API failure so a transient outage doesn't get
+// mistaken for "no such person" (which would silently block every login).
+async function lookupAspektContact(personalNumber) {
+  const requestId = uuid();
+  try {
+    const response = await aspektClient.get(`/api/getContact/${requestId}`, {
+      data: { Alias: personalNumber },
+    });
+    if (response.status === 200) {
+      const body = response.data?.Body;
+      return Array.isArray(body) && body.length > 0 ? body[0] : null;
+    }
+    if (response.status === 402) return null; // CBS "contact not found"
+    throw httpError(502, 'contact lookup failed');
+  } catch (err) {
+    // Aspekt signals "no such contact" with a 402 (some envs return 404).
+    const status = err.response?.status;
+    if (status === 402 || status === 404) return null;
+    if (err.statusCode) throw err; // our own httpError, re-raise as-is
+    throw httpError(502, 'contact lookup failed');
+  }
 }
 
 function signCustomerToken(customer) {
@@ -53,17 +81,27 @@ async function requestOtp({ personalNumber }) {
     throw httpError(400, 'personalNumber is required');
   }
 
-  const { rows } = await db.query(
-    `SELECT contact_id, personal_number, mobile, is_active
-       FROM users WHERE personal_number = $1`,
-    [personalNumber.trim()]
-  );
-  const user = rows[0];
+  const alias = personalNumber.trim();
+
+  // Existence is decided by Aspekt (the source of truth), not the local cache.
+  const contact = await lookupAspektContact(alias);
 
   // Don't leak which numbers exist — always respond as if we sent.
-  if (!user || !user.is_active) {
+  if (!contact) {
     return { sent: true, ttl: OTP_TTL_SECONDS };
   }
+
+  // Mirror the Aspekt contact into the local users table so we have a
+  // contact_id to key the OTP (and later the JWT in verifyOtp) against.
+  const { contact_id } = await customerService.createOrUpdateCustomer({
+    contactCode: contact.ContactCode,
+    personalNumber: contact.PersonalNumber || alias,
+    firstName: contact.FirstName,
+    lastName: contact.LastName,
+    birthDate: contact.BirthDate,
+    mobile: contact.Mobile,
+    address: contact.Address,
+  });
 
   const code = generateOtp();
   const hash = await bcrypt.hash(code, 10);
@@ -77,12 +115,12 @@ async function requestOtp({ personalNumber }) {
            expires_at = EXCLUDED.expires_at,
            attempts   = 0,
            created_at = now()`,
-    [user.contact_id, hash, expiresAt]
+    [contact_id, hash, expiresAt]
   );
 
   if (process.env.NODE_ENV !== 'production') {
     // Dev: log the code so you can test without an SMS gateway.
-    console.log(`[customerAuth] OTP for ${user.personal_number} (mobile ${user.mobile}): ${code}`);
+    console.log(`[customerAuth] OTP for ${alias} (mobile ${contact.Mobile}): ${code}`);
   }
   // TODO: integrate SMS gateway in production.
 

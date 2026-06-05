@@ -10,6 +10,7 @@ const TABLES = [
   'lead_products',
   'leads',
   'loan_applications',
+  'customer_otp_codes',
   'user_images',
   'users',
   'auth_users',
