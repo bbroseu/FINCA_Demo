@@ -95,7 +95,10 @@ async function requestOtp({ personalNumber }) {
   // contact_id to key the OTP (and later the JWT in verifyOtp) against.
   const { contact_id } = await customerService.createOrUpdateCustomer({
     contactCode: contact.ContactCode,
-    personalNumber: contact.PersonalNumber || alias,
+    // Key the local user on the alias the customer authenticates with — Aspekt
+    // may decorate its PersonalNumber (e.g. an "asp_" prefix), and verifyOtp
+    // looks the user up by the raw typed alias, so the two must match.
+    personalNumber: alias,
     firstName: contact.FirstName,
     lastName: contact.LastName,
     birthDate: contact.BirthDate,

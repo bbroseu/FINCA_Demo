@@ -13,6 +13,15 @@ function httpError(status, message) {
   return err;
 }
 
+// WORKAROUND: `users.mobile` is NOT NULL in prod, but some Aspekt contacts have
+// no mobile (so OTP login / mirroring would crash on insert). Until the column
+// is made nullable in prod (see schema.sql), we hardset this placeholder.
+// TODO(prod): ALTER TABLE users ALTER COLUMN mobile DROP NOT NULL, then remove this.
+const MOBILE_PLACEHOLDER = 'N/A';
+function normalizeMobile(mobile) {
+  return mobile && String(mobile).trim() ? String(mobile).trim() : MOBILE_PLACEHOLDER;
+}
+
 function parseActiveFilter(value) {
   if (value === undefined || value === null || value === '' || value === 'all') return undefined;
   if (value === 'true' || value === true) return true;
@@ -182,7 +191,11 @@ async function createOrUpdateCustomer({
        SET first_name   = EXCLUDED.first_name,
            last_name    = EXCLUDED.last_name,
            birth_date   = COALESCE(EXCLUDED.birth_date, users.birth_date),
-           mobile       = EXCLUDED.mobile,
+           -- Don't clobber a real stored mobile with the placeholder.
+           mobile       = CASE
+                            WHEN EXCLUDED.mobile = $10 THEN users.mobile
+                            ELSE EXCLUDED.mobile
+                          END,
            address      = COALESCE(EXCLUDED.address, users.address),
            email        = COALESCE(EXCLUDED.email,   users.email),
            contact_code = CASE
@@ -192,7 +205,8 @@ async function createOrUpdateCustomer({
            last_updated = now()
      RETURNING contact_id, contact_code, (xmax = 0) AS inserted`,
     [tempCode, personalNumber, firstName, lastName, isoBirthDate,
-     mobile, address ?? null, email ?? null, contactCode ?? null]
+     normalizeMobile(mobile), address ?? null, email ?? null, contactCode ?? null,
+     MOBILE_PLACEHOLDER]
   );
 
   const { contact_id: id, contact_code: code, inserted } = rows[0];
