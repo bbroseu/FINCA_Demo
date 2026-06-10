@@ -49,9 +49,9 @@ class LeadService {
       errors.push('Mobile number is required');
     }
 
-    if (!leadData.Email || leadData.Email.trim() === '') {
-      errors.push('Email is required');
-    }
+    // if (!leadData.Email || leadData.Email.trim() === '') {
+    //   errors.push('Email is required');
+    // }
 
     if (!leadData.PlaceCode || leadData.PlaceCode.trim() === '') {
       errors.push('Place/Branch code is required');
@@ -69,13 +69,13 @@ class LeadService {
       errors.push('At least one product must be selected');
     }
 
-    if (leadData.Email && !/\S+@\S+\.\S+/.test(leadData.Email)) {
-      errors.push('Invalid email format');
-    }
+    // if (leadData.Email && !/\S+@\S+\.\S+/.test(leadData.Email)) {
+    //   errors.push('Invalid email format');
+    // }
 
-    if (leadData.Mobile && !/^\+?[\d\s\-\(\)]{7,15}$/.test(leadData.Mobile)) {
-      errors.push('Invalid mobile number format');
-    }
+    // if (leadData.Mobile && !/^\+?[\d\s\-\(\)]{7,15}$/.test(leadData.Mobile)) {
+    //   errors.push('Invalid mobile number format');
+    // }
 
     return {
       isValid: errors.length === 0,
