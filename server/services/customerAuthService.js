@@ -193,9 +193,41 @@ async function getProfile(contactId) {
   return rows[0] ?? null;
 }
 
+// Builds the authenticated customer's own profile: the locally cached row
+// enriched with the authoritative, fresher fields from Aspekt (birth date,
+// address, current mobile). The Aspekt lookup is keyed on the customer's OWN
+// personal_number taken from their JWT-backed users row — never a client-
+// supplied alias — so a customer can only ever read their own record.
+// If Aspekt is unreachable we still return the local data (a transient CBS
+// outage shouldn't blank out the profile screen); `source` says which we used.
+async function getOwnProfile(contactId) {
+  const local = await getProfile(contactId);
+  if (!local) return null;
+
+  let contact = null;
+  try {
+    contact = await lookupAspektContact(local.personal_number);
+  } catch (_) {
+    // Swallow CBS errors here and fall back to the cached row below.
+    contact = null;
+  }
+
+  return {
+    ...publicCustomer(local),
+    first_name: contact?.FirstName ?? local.first_name,
+    last_name: contact?.LastName ?? local.last_name,
+    mobile: contact?.Mobile ?? local.mobile,
+    birth_date: contact?.BirthDate ?? null,
+    address: contact?.Address ?? null,
+    registration_date: local.registration_date,
+    source: contact ? 'aspekt' : 'local',
+  };
+}
+
 module.exports = {
   requestOtp,
   verifyOtp,
   getProfile,
+  getOwnProfile,
   publicCustomer,
 };

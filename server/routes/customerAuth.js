@@ -49,4 +49,18 @@ router.get('/me', requireCustomerJwt, async (req, res) => {
   }
 });
 
+// GET /api/customer/auth/profile
+// The authenticated customer's own full profile: local row enriched with the
+// authoritative Aspekt contact details (birth date, address, current mobile).
+// Always scoped to the caller's own contact_id from the JWT.
+router.get('/profile', requireCustomerJwt, async (req, res) => {
+  try {
+    const profile = await customerAuthService.getOwnProfile(req.customer.contact_id);
+    if (!profile) return res.status(404).json({ error: 'Customer not found' });
+    return res.json(profile);
+  } catch (err) {
+    return sendError(res, err);
+  }
+});
+
 module.exports = router;
